@@ -1,187 +1,426 @@
 # System Architecture
 
-This document describes the high-level architecture of the Amazon-to-eBay Reseller platform.
-
-## Overview
-
-The platform is a full-stack application composed of:
-- a **Python/FastAPI** backend with async PostgreSQL and Celery workers,
-- a **Next.js** dashboard frontend,
-- **Docker** containers for local development and production deployment,
-- external integrations with **Amazon Product Advertising API** and **eBay REST API**.
-
-The architecture follows a **layered, service-oriented** design with clear separation between API routes, business logic, data access, and background task processing.
+**Project:** Amazon-to-eBay Reselling Automation  
+**Date:** 2026-05-11  
+**Issue:** [CPRAA-107](/CPRAA/issues/CPRAA-107)
 
 ---
 
-## High-Level Diagram
+## 1. High-Level Architecture
+
+The platform is a **three-tier application** with asynchronous background processing. It separates the public API surface, the operational dashboard, and the long-running sync jobs into distinct runtime units that share a single PostgreSQL database and Redis message broker.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           Client Layer                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────────┐ │
-│  │  Next.js    │  │  Swagger UI │  │  eBay Webhooks (push)       │ │
-│  │  Dashboard  │  │  / Redoc    │  │  (order notifications)      │ │
-│  │  (Port 3000)│  │  (Port 8000)│  │                             │ │
-│  └──────┬──────┘  └─────────────┘  └─────────────────────────────┘ │
-└─────────┼───────────────────────────────────────────────────────────┘
-          │ HTTP / REST
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        API Gateway Layer                            │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  FastAPI Application (Port 8000)                             │   │
-│  │  • CORS middleware (configurable origins)                    │   │
-│  │  • Rate limiting (`Slowapi` — default 100/min, auth 10/min)  │   │
-│  │  • JWT authentication (`/api/v1/auth/*`)                    │   │
-│  │  • Health check (`/api/v1/health`)                          │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Service Layer                                │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌──────────────┐  │
-│  │  Sourcing   │ │   Pricing   │ │  eBay API   │ │  Amazon API  │  │
-│  │  Service    │ │   Service   │ │  Client     │ │  Client      │  │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └──────────────┘  │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌──────────────┐  │
-│  │   Listing   │ │   Product   │ │   Order     │ │   Profit     │  │
-│  │  Service    │ │   Service   │ │  Service    │ │  Service     │  │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └──────────────┘  │
-│  ┌─────────────┐ ┌─────────────┐                                    │
-│  │   Listing   │ │  Purchase   │                                    │
-│  │   Creator   │ │  Service    │                                    │
-│  └─────────────┘ └─────────────┘                                    │
-└─────────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Data Layer                                   │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  PostgreSQL 16 (async via asyncpg / sync via psycopg2)       │   │
-│  │  • SQLAlchemy 2.x ORM (declarative base)                     │   │
-│  │  • Alembic migrations                                        │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  Redis 7                                                     │   │
-│  │  • Celery broker (task queue)                                │   │
-│  │  • Celery result backend                                     │   │
-│  │  • Optional: caching / session store                         │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Background Worker Layer                         │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  Celery Workers (auto-scaled)                                │   │
-│  │  • Amazon product sync                                       │   │
-│  │  • eBay listing sync                                         │   │
-│  │  • Price sync                                                │   │
-│  │  • Stock sync                                                │   │
-│  │  • Order sync                                                │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  Celery Beat Scheduler                                       │   │
-│  │  • Drives periodic tasks (intervals defined in config)       │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     External APIs                                   │
-│  ┌────────────────────────┐  ┌──────────────────────────────────┐  │
-│  │  Amazon PA-API         │  │  eBay REST API (OAuth 2.0)       │  │
-│  │  (product search,      │  │  • Inventory / Trading /         │  │
-│  │   item lookup,         │  │    Sell APIs                     │  │
-│  │   price & stock)       │  │  • Webhook push for orders       │  │
-│  └────────────────────────┘  └──────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              Client Layer                                │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  Next.js 16 Dashboard (React 19, Tailwind CSS, Recharts)        │    │
+│  │  • JWT Bearer authentication                                    │    │
+│  │  • Exponential-backoff fetch client                             │    │
+│  │  • Dark mode + responsive layout                                │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │ HTTPS / CORS
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              API Layer                                   │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  FastAPI 0.1.0 (Python 3.13, Uvicorn)                           │    │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │    │
+│  │  │  Auth       │  │  Business   │  │  Background Tasks       │  │    │
+│  │  │  Router     │  │  Routers    │  │  (Celery)               │  │    │
+│  │  │             │  │             │  │                         │  │    │
+│  │  │  /auth      │  │  /products  │  │  • Price Sync Worker    │  │    │
+│  │  │             │  │  /listings  │  │  • Stock Sync Worker    │  │    │
+│  │  │  JWT/OAuth2 │  │  /orders    │  │  • Order Sync Worker    │  │    │
+│  │  │  bcrypt     │  │  /pricing   │  │  • Sourcing Worker      │  │    │
+│  │  │             │  │  /sourcing  │  │  • Beat Scheduler       │  │    │
+│  │  │             │  │  /sync      │  │                         │  │    │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │    │
+│  │                                                                  │    │
+│  │  Cross-cutting: Rate limiting, CORS, global exception handler    │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+            ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+            │  PostgreSQL  │ │    Redis     │ │  External    │
+            │     16       │ │      7       │ │    APIs      │
+            │              │ │              │ │              │
+            │  • Products  │ │  • Celery    │ │  • Amazon    │
+            │  • Listings  │ │    Broker    │ │    PA-API    │
+            │  • Orders    │ │  • Celery    │ │  • eBay      │
+            │  • Pricing   │ │    Backend   │ │    REST API  │
+            │  • Users     │ │              │ │              │
+            │  • Sync Log  │ │              │ │              │
+            └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
 ---
 
-## Component Breakdown
+## 2. Component Breakdown
 
-### 1. FastAPI Application (`app/`)
+### 2.1 Dashboard (Next.js 16)
 
-| Directory | Purpose |
-|-----------|---------|
-| `app/api/v1/endpoints/` | REST route handlers (sourcing, listings, orders, products, pricing, sync, auth, health) |
-| `app/core/` | Shared infrastructure: config (`pydantic-settings`), database engine, security (JWT), rate limiter, circuit breaker |
-| `app/models/` | SQLAlchemy ORM models (`Product`, `Listing`, `Order`, `PriceHistory`, `SyncLog`, `PricingRule`, `User`) |
-| `app/schemas/` | Pydantic request/response models and validation |
-| `app/services/` | Business logic: API clients for Amazon/eBay, pricing engine, listing creator, order processing |
-| `app/tasks/` | Celery task definitions and the Celery application factory |
+**Responsibilities:**
+- Provide the reseller with a unified operational view.
+- Authenticate against the FastAPI backend via JWT.
+- Render analytics (profit trends, margin distribution, KPIs).
+- Support CRUD for products, listings, orders, and pricing rules.
 
-### 2. Next.js Dashboard (`dashboard/`)
+**Runtime:**
+- Development: `next dev` on port `3000`.
+- Production: `next build` → `next start` (or exported static + reverse proxy).
 
-- Bootstrapped with `create-next-app`.
-- Communicates with the backend via the REST API.
-- Intended for listing management, sourcing configuration, pricing rule editing, and order tracking.
-- End-to-end tests written with Playwright (`e2e/`).
+**Key Modules:**
+- `app/page.tsx` — Dashboard home with Recharts visualisations.
+- `app/products/page.tsx` — Product catalog.
+- `app/listings/page.tsx` + `app/listings/new/page.tsx` — Listing management.
+- `app/orders/page.tsx` + `app/orders/[id]/page.tsx` — Order tracking.
+- `app/pricing/page.tsx` — Pricing rules CRUD.
+- `app/profits/page.tsx` — Profit analytics.
+- `lib/api.ts` — Typed fetch client with retry logic.
+- `components/Sidebar.tsx`, `KpiCard.tsx`, `Skeleton.tsx` — Shared UI.
 
-### 3. Database (`PostgreSQL`)
+### 2.2 API Server (FastAPI)
 
-| Table | Purpose |
-|-------|---------|
-| `products` | Amazon-sourced products with current price and metadata |
-| `listings` | eBay draft/active/ended listings linked to products |
-| `orders` | eBay orders with fulfillment and profit tracking |
-| `price_history` | Time-series price records for audit and delta detection |
-| `sync_log` | Audit log for all background sync operations |
-| `pricing_rules` | Configurable markup rules with priority and constraints |
-| `users` | Local admin/users for dashboard authentication |
+**Responsibilities:**
+- Expose a versioned REST API (`/api/v1`).
+- Authenticate and authorise requests (JWT + active-user guard).
+- Validate request/response payloads (Pydantic v2).
+- Rate-limit endpoints to protect against abuse.
+- Return structured error envelopes for all failure modes.
 
-### 4. Message Queue & Workers (`Redis` + `Celery`)
+**Lifespan:**
+- On startup: creates SQLAlchemy tables via `Base.metadata.create_all`.
+- This is acceptable for single-node deployments; for multi-replica, use an init container.
 
-- **Broker:** Redis (configurable host/port/password).
-- **Result backend:** Redis.
-- **Workers:** Separate `worker` service in Docker Compose.
-- **Scheduler:** Separate `beat` service driving periodic tasks.
+**Router Organisation:**
 
-### 5. External Integrations
+| Router | Prefix | Auth | Notes |
+|--------|--------|------|-------|
+| `health` | `/api/v1/health` | Public | Liveness/readiness probe |
+| `auth` | `/api/v1/auth` | Public | Login, register, token issuance |
+| `products` | `/api/v1/products` | Protected | Catalog CRUD |
+| `listings` | `/api/v1/listings` | Protected | eBay listing CRUD + publish |
+| `orders` | `/api/v1/orders` | Protected | Order management |
+| `orders_webhook` | `/api/v1/orders` | Public | eBay inbound webhook |
+| `pricing` | `/api/v1/pricing` | Protected | Pricing rules + calculator |
+| `sourcing` | `/api/v1/sourcing` | Protected | Amazon search + margin estimation |
+| `sync` | `/api/v1/sync` | Protected | Manual sync triggers |
 
-| API | Purpose | Auth |
-|-----|---------|------|
-| Amazon PA-API | Search products, fetch prices/stock, get images | AWS Signature V4 (`AMAZON_ACCESS_KEY`, `AMAZON_SECRET_KEY`) |
-| eBay REST API | Create/revise listings, sync orders, manage inventory | OAuth 2.0 client credentials (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`) |
+### 2.3 Background Workers (Celery)
+
+**Responsibilities:**
+- Execute time-consuming or periodic tasks outside the request path.
+- Poll external APIs on a schedule.
+- Update database state and sync logs atomically.
+
+**Topology:**
+- **Broker:** Redis (`CELERY_BROKER_URL`).
+- **Backend:** Redis (`CELERY_RESULT_BACKEND`).
+- **Worker process:** `celery -A app.tasks.celery_app worker --concurrency=2`.
+- **Beat process:** `celery -A app.tasks.celery_app beat` (scheduler).
+
+**Task Inventory:**
+
+| Task | Module | Trigger | Purpose |
+|------|--------|---------|---------|
+| `sync_amazon_products` | `amazon_tasks` | Beat (12h) | Bulk refresh of catalog |
+| `sync_ebay_listings` | `ebay_tasks` | Beat (1h) | Mirror eBay offer state |
+| `sync_ebay_orders` | `order_sync` | Beat (30m) | Poll fulfillment API |
+| `refresh_amazon_prices` | `price_sync` | Beat (2h) | Detect price changes |
+| `sync_amazon_stock` | `stock_sync` | Beat (6h) | Detect stock changes |
+| `sync_amazon_prices` | `price_sync` | Beat (2h) | Alias (cleanup needed) |
+
+### 2.4 Database (PostgreSQL 16)
+
+**Responsibilities:**
+- Persistent storage for all domain entities.
+- ACID guarantees for order and financial data.
+- Async I/O via `asyncpg` (SQLAlchemy async engine).
+
+**Access Patterns:**
+- API server: async sessions (`AsyncSession`, `expire_on_commit=False`).
+- Alembic migrations: sync sessions (`DATABASE_URL_SYNC`).
+
+**Indexes:**
+- `products.asin` (unique).
+- `listings.status + product_id` (compound).
+- `orders.status + ebay_order_id` (compound).
+- `price_history.product_id + recorded_at` (compound, time-series queries).
+- `pricing_rules.is_active + priority` (compound, rule selection).
+
+### 2.5 Message Broker (Redis 7)
+
+**Responsibilities:**
+- Celery task queue and result store.
+- Optional future use: distributed circuit breaker state, caching, session store.
+
+**Configuration:**
+- Built from components (`REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`).
+- Password optional; defaults to no auth for local dev.
 
 ---
 
-## Request Flow Example (Sourcing)
+## 3. Data Flow
 
-1. **User** sends `POST /api/v1/sourcing/search` with keywords and filters.
-2. **FastAPI** validates the request (Pydantic schema) and rate-limits the caller.
-3. **Sourcing Service** calls the **Amazon API Client** to search PA-API.
-4. For each result, the **Pricing Service** estimates eBay price and margin.
-5. Promising products are persisted via **Product Service**.
-6. If `auto_create_listings=True`, the **Listing Creator** generates draft listings.
-7. Results are returned to the user; listings can later be published via the eBay API.
+### 3.1 Sourcing Flow
+
+```
+User searches keywords in Dashboard
+         │
+         ▼
+Dashboard POST /api/v1/sourcing/search
+         │
+         ▼
+FastAPI ──► SourcingService ──► AmazonProductAPI.search_items()
+         │                           │
+         │                           ▼
+         │                    Amazon PA-API v5
+         │                           │
+         │                           ▼
+         │                    Results + margin estimate
+         │                           │
+         ▼                           ▼
+    Response: SourcingResult[]
+         │
+         ▼
+    User selects product → auto-create listing (optional)
+```
+
+### 3.2 Listing Creation Flow
+
+```
+User creates listing from product
+         │
+         ▼
+Dashboard POST /api/v1/listings
+         │
+         ▼
+FastAPI ──► ListingService ──► EbayAPI.create_listing()
+         │                         │
+         │                         ▼
+         │              1. PUT inventory_item/{sku}
+         │              2. POST offer
+         │              3. POST offer/{id}/publish
+         │                         │
+         │                         ▼
+         │                    eBay Inventory API
+         │                         │
+         │                         ▼
+         │              Response: {sku, offer_id, item_id, status}
+         │                         │
+         ▼                         ▼
+    DB: Listing row created with status = active
+```
+
+### 3.3 Order Ingestion Flow
+
+```
+         ┌──────────────────────────────────────────┐
+         │  eBay platform generates sale            │
+         └──────────────┬───────────────────────────┘
+                        │
+         ┌──────────────▼───────────────────────────┐
+         │  Option A: Webhook POST                  │
+         │  /api/v1/orders/webhook                  │
+         └──────────────┬───────────────────────────┘
+                        │
+         ┌──────────────▼───────────────────────────┐
+         │  Option B: Celery Beat polls             │
+         │  sync_ebay_orders every 30m              │
+         └──────────────┬───────────────────────────┘
+                        │
+                        ▼
+              FastAPI OrderService
+                        │
+                        ▼
+              DB: Order row inserted
+                        │
+                        ▼
+              Dashboard shows new order
+                        │
+                        ▼
+              User marks purchased, enters cost
+                        │
+                        ▼
+              DB: profit & margin_percent computed
+```
+
+### 3.4 Price Sync Flow
+
+```
+Celery Beat triggers refresh_amazon_prices
+         │
+         ▼
+PriceSyncTask ──► AmazonProductAPI.get_items(asins)
+         │              │
+         │              ▼
+         │       Amazon PA-API v5
+         │              │
+         │              ▼
+         │       New prices returned
+         │              │
+         ▼              ▼
+    DB: product.current_price updated
+    DB: price_history snapshot inserted
+         │
+         ▼
+    If delta >= PRICE_SYNC_MIN_DELTA_PERCENT
+         │
+         ▼
+    EbayAPI.update_listing(sku, price)
+         │
+         ▼
+    eBay offer price updated
+```
 
 ---
 
-## Deployment Architecture
+## 4. External API Integration Architecture
 
-### Local Development
+### 4.1 Amazon Product Advertising API v5
 
-```bash
+**Auth:** AWS Signature Version 4 (SigV4)  
+**Client:** `AmazonProductAPI` (`app/services/amazon_api.py`)
+
+- `access_key`, `secret_key`, `partner_tag` required.
+- Requests signed with `AWS4-HMAC-SHA256`.
+- `httpx.AsyncClient` with 30s timeout.
+- All calls wrapped with circuit breaker + retry.
+
+**Endpoints Used:**
+- `SearchItems` — keyword/category search.
+- `GetItems` — batch lookup by ASIN (max 10 per call).
+- `GetBrowseNodes` — category tree navigation.
+
+**Data Mapping:**
+- `ASIN` → `Product.asin`
+- `ItemInfo.Title.DisplayValue` → `Product.title`
+- `Offers.Listings[0].Price.Amount` → `Product.amazon_price`
+- `Images.Primary.Large.URL` → `Product.image_url`
+
+### 4.2 eBay REST API
+
+**Auth:** OAuth 2.0 Client Credentials (`client_id` + `client_secret`)  
+**Client:** `EbayAPI` (`app/services/ebay_api.py`)
+
+- Token refreshed automatically on expiry or `401`.
+- Scope: `sell.inventory`, `sell.fulfillment`.
+- Marketplace ID resolved from `EBAY_SITE_ID` (default `EBAY_US`).
+
+**Endpoints Used:**
+- `PUT /sell/inventory/v1/inventory_item/{sku}` — catalog data.
+- `POST /sell/inventory/v1/offer` — pricing/quantity offer.
+- `POST /sell/inventory/v1/offer/{id}/publish` — go live.
+- `POST /sell/inventory/v1/offer/{id}/withdraw` — end listing.
+- `GET /sell/fulfillment/v1/order` — order polling.
+
+**Data Mapping:**
+- `sku` = `Listing.ebay_item_id` (treated as SKU in v0.1.0).
+- `offerId` → `Listing.ebay_item_id` (after publish, `listingId` used).
+
+---
+
+## 5. Resilience Architecture
+
+All external API interactions pass through a uniform resilience layer (`app/core/resilience.py`).
+
+```
+Caller
+  │
+  ▼
+CircuitBreaker.can_execute?
+  │ Yes
+  ▼
+with_retry(func, config, breaker)
+  │
+  ├──► Attempt 1
+  │      │
+  │      ├──► Success ──► breaker.record_success() ──► return
+  │      │
+  │      └──► Retryable? ──► backoff sleep ──► Attempt 2 ...
+  │
+  └──► Exhausted ──► breaker.record_failure() ──► raise
+```
+
+**Per-API Configuration:**
+
+| Parameter | Amazon | eBay |
+|-----------|--------|------|
+| Failure threshold | 5 | 5 |
+| Recovery timeout | 60s | 60s |
+| Max retries | 3 | 3 |
+| Base delay | 1s | 1s |
+| Max delay | 60s | 60s |
+
+**Special Cases:**
+- eBay `401`: immediate in-band token refresh + single retry before backoff.
+- Non-retryable errors (`400`, `403`, `404`, `422`): fail fast, record failure.
+
+---
+
+## 6. Security Architecture
+
+```
+Client ──► [HTTPS] ──► Reverse Proxy (TLS termination)
+                         │
+                         ▼
+                    FastAPI Server
+                         │
+                    ┌────┴────┐
+                    │  CORS   │ ──► origin whitelist
+                    │  Limiter│ ──► rate limits
+                    │  OAuth2 │ ──► JWT validation
+                    └────┬────┘
+                         │
+                    ┌────┴────┐
+                    │ bcrypt  │ ──► password hashing
+                    │ jose/jwt│ ──► token encode/decode
+                    └─────────┘
+```
+
+- **Transport:** HTTPS in production; CORS restricted to known origins.
+- **Auth:** Stateless JWT (Bearer); no server-side session store.
+- **Secrets:** No defaults in code; loaded from `.env` at runtime.
+- **Container:** Non-root user (`appuser`) in runtime stage.
+
+---
+
+## 7. Deployment Architecture
+
+### 7.1 Local Development
+
+```
 docker compose up --build
 ```
 
-Services: `api` (FastAPI + auto-reload), `worker`, `beat`, `db`, `redis`.
+- `api`: Uvicorn with `--reload`.
+- `worker` + `beat`: Celery with live code mounts.
+- `db` + `redis`: Persistent volumes.
 
-### Production
+### 7.2 Production
 
-```bash
+```
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-- Multi-stage Dockerfile with a non-root `appuser`.
-- Healthchecks on the API container.
 - Resource limits and restart policies.
-- Migrations run via `scripts/entrypoint.sh` on container start.
-- Recommended: reverse proxy (Traefik/Nginx) for TLS termination.
+- Healthchecks on all services.
+- Migrations recommended in init container (not app startup) for horizontal scaling.
+- Reverse proxy (Traefik / Nginx) for TLS and load balancing.
 
-See `deployment.md` for detailed environment and security guidance.
+### 7.3 Scaling Vectors
+
+| Bottleneck | Mitigation |
+|------------|------------|
+| API CPU | Horizontal replica scaling behind load balancer |
+| DB reads | Read replicas for analytics queries |
+| Celery queue depth | Add worker replicas; route to dedicated queues |
+| External API rate limits | Backoff + jitter; circuit breaker prevents hammering |
+
+---
+
+*End of Document*
