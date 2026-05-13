@@ -135,7 +135,7 @@ async def update_rule(db: AsyncSession, rule: PricingRule, rule_in) -> PricingRu
     if rule.min_price is not None and rule.max_price is not None and rule.min_price > rule.max_price:
         raise ValueError("min_price must be less than or equal to max_price")
 
-    rule.updated_at = datetime.now(timezone.utc)
+    rule.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(rule)
     return rule
@@ -144,7 +144,7 @@ async def update_rule(db: AsyncSession, rule: PricingRule, rule_in) -> PricingRu
 async def delete_rule(db: AsyncSession, rule: PricingRule) -> PricingRule:
     """Soft delete: deactivate the rule."""
     rule.is_active = False
-    rule.updated_at = datetime.now(timezone.utc)
+    rule.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(rule)
     return rule

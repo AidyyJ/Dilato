@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.limiter import limiter
-from app.core.security import verify_password, create_access_token, get_password_hash
+from app.core.security import (
+    verify_password,
+    create_access_token,
+    get_password_hash,
+    get_current_active_user,
+)
 from app.models.models import User
 from app.schemas.schemas import Token, UserCreate, UserOut
 
@@ -59,3 +64,11 @@ async def register(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.get("/me", response_model=UserOut)
+async def read_current_user(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the currently authenticated user from the bearer token."""
+    return current_user

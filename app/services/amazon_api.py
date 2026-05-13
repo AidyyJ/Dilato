@@ -65,7 +65,7 @@ def _sign_request(
     access_key: str,
     secret_key: str,
     region: str,
-) -> str:
+) -> tuple[str, str]:
     """Generate the AWS SigV4 Authorization header for Product Advertising API."""
     algorithm = "AWS4-HMAC-SHA256"
     now = datetime.now(timezone.utc)

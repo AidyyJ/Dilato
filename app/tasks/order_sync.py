@@ -37,7 +37,7 @@ async def _sync_ebay_orders() -> dict:
             await api.close()
 
 
-@celery_app.task(bind=True, name="tasks.sync_ebay_orders", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def sync_ebay_orders(self):
     """Celery task to sync eBay orders."""
     logger.info("Starting eBay order sync")

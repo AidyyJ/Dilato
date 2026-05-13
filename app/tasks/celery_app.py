@@ -22,29 +22,27 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     beat_schedule={
         "sync-amazon-products": {
-            "task": "tasks.sync_amazon_products",
+            "task": "app.tasks.amazon_tasks.sync_amazon_products",
             "schedule": 43200,  # every 12 hours
         },
         "sync-ebay-listings": {
-            "task": "tasks.sync_ebay_listings",
+            "task": "app.tasks.ebay_tasks.sync_ebay_listings",
             "schedule": 3600,  # every 1 hour
         },
         "sync-ebay-orders": {
-            "task": "tasks.sync_ebay_orders",
+            "task": "app.tasks.order_sync.sync_ebay_orders",
             "schedule": 1800,  # every 30 minutes
         },
         "refresh-amazon-prices": {
-            "task": "tasks.refresh_amazon_prices",
+            "task": "app.tasks.amazon_tasks.refresh_amazon_prices",
             "schedule": settings.PRICE_SYNC_INTERVAL,
         },
         "sync-amazon-stock": {
-            "task": "tasks.sync_amazon_stock",
+            "task": "app.tasks.stock_sync.sync_amazon_stock",
             "schedule": settings.STOCK_SYNC_INTERVAL,
         },
-        "sync-amazon-prices": {
-            "task": "tasks.sync_amazon_prices",
-            "schedule": settings.PRICE_SYNC_INTERVAL,
-        },
+        # NOTE: "sync-amazon-prices" (from price_sync.py) was removed as a duplicate
+        # of "refresh-amazon_prices". Keep it as a manually-triggerable task if needed.
     },
 )
 

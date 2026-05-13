@@ -77,7 +77,7 @@ async def _sync_amazon_products(
             await api.close()
 
 
-@celery_app.task(bind=True, name="tasks.sync_amazon_products", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def sync_amazon_products(
     self,
     keywords: str = None,
@@ -149,7 +149,7 @@ async def _refresh_amazon_prices() -> dict:
                                 product.amazon_price = new_price_dec
                                 product.current_price = new_price_dec
 
-                        product.last_synced_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        product.last_synced_at = datetime.utcnow()
                         succeeded += 1
                     await session.commit()
                 except Exception as exc:  # pragma: no cover
@@ -183,7 +183,7 @@ async def _refresh_amazon_prices() -> dict:
             await api.close()
 
 
-@celery_app.task(bind=True, name="tasks.refresh_amazon_prices", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def refresh_amazon_prices(self):
     """Celery task to refresh Amazon prices for tracked products."""
     logger.info("Starting Amazon price refresh")

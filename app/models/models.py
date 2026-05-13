@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, Enum, ForeignKey, Index, Numeric
 from sqlalchemy.orm import relationship
@@ -68,8 +68,8 @@ class Product(Base):
     source = Column(Enum(ProductSource), default=ProductSource.amazon, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     last_synced_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     listings = relationship("Listing", back_populates="product", lazy="selectin")
     price_history = relationship("PriceHistory", back_populates="product", lazy="selectin", cascade="all, delete-orphan")
@@ -92,8 +92,8 @@ class Listing(Base):
     ebay_fee_estimate = Column(Numeric(8, 2), nullable=True)
     started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     product = relationship("Product", back_populates="listings")
     orders = relationship("Order", back_populates="listing", lazy="selectin")
@@ -132,8 +132,8 @@ class Order(Base):
     amazon_order_id = Column(String(50), nullable=True)
     purchased_at = Column(DateTime, nullable=True)
     fulfillment_status = Column(Enum(FulfillmentStatus), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     listing = relationship("Listing", back_populates="orders")
 
@@ -150,7 +150,7 @@ class PriceHistory(Base):
     price = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="USD", nullable=False)
     source = Column(String(50), nullable=False)
-    recorded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     product = relationship("Product", back_populates="price_history")
 
@@ -171,7 +171,7 @@ class SyncLog(Base):
     error_message = Column(Text, nullable=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         Index("ix_sync_type_status", "sync_type", "status"),
@@ -190,8 +190,8 @@ class PricingRule(Base):
     min_margin_percent = Column(Numeric(5, 2), nullable=True)
     priority = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         Index("ix_pricing_rule_active_priority", "is_active", "priority"),
@@ -207,5 +207,5 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

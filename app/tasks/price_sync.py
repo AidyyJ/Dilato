@@ -150,7 +150,7 @@ async def _sync_amazon_prices() -> dict:
             raise
 
 
-@celery_app.task(bind=True, name="tasks.sync_amazon_prices", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def sync_amazon_prices(self):
     """Celery task to sync Amazon prices with eBay listings using pricing rules."""
     logger.info("Starting Amazon price sync")

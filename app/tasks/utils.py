@@ -50,7 +50,7 @@ async def create_sync_log(session: AsyncSession, sync_type: SyncType) -> SyncLog
     log = SyncLog(
         sync_type=sync_type,
         status=SyncStatus.running,
-        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        started_at=datetime.utcnow(),
     )
     session.add(log)
     await session.commit()
@@ -72,5 +72,5 @@ async def complete_sync_log(
     log.records_succeeded = succeeded
     log.records_failed = failed
     log.error_message = error_message
-    log.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    log.completed_at = datetime.utcnow()
     await session.commit()

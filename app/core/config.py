@@ -1,7 +1,25 @@
-from typing import List
+import json
+from typing import Any, List
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources import EnvSettingsSource
+
+# Monkey-patch EnvSettingsSource to fall back to comma-splitting for known list fields.
+# This affects both EnvSettingsSource and DotEnvSettingsSource (its subclass).
+_original_decode_complex_value = EnvSettingsSource.decode_complex_value
+
+
+def _decode_complex_value(self, field_name: str, field, value: str) -> Any:
+    try:
+        return _original_decode_complex_value(self, field_name, field, value)
+    except json.JSONDecodeError:
+        if field_name in {"ALLOWED_ORIGINS", "CORS_ALLOW_METHODS", "CORS_ALLOW_HEADERS"}:
+            return [item.strip() for item in value.split(",") if item.strip()]
+        raise
+
+
+EnvSettingsSource.decode_complex_value = _decode_complex_value
 
 
 class Settings(BaseSettings):

@@ -60,9 +60,9 @@ async def update_listing_status(
     if ebay_item_id:
         listing.ebay_item_id = ebay_item_id
     if status == ListingStatus.active and not listing.started_at:
-        listing.started_at = datetime.now(timezone.utc)
+        listing.started_at = datetime.utcnow()
     if status == ListingStatus.ended:
-        listing.ended_at = datetime.now(timezone.utc)
+        listing.ended_at = datetime.utcnow()
     await db.commit()
     await db.refresh(listing)
     return listing

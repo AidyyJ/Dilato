@@ -230,7 +230,7 @@ async def publish_listing(
     listing.status = ListingStatus.active
     listing.ebay_item_id = result.get("item_id")
     listing.ebay_sku = sku
-    listing.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    listing.started_at = datetime.utcnow()
 
     await db.commit()
     await db.refresh(listing)

@@ -5,9 +5,43 @@ from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
-from app.models.models import Order, OrderStatus, Listing, ListingStatus
+from app.models.models import Order, OrderStatus, FulfillmentStatus, Listing, ListingStatus
 
 _NOW = datetime.now(timezone.utc)
+
+
+def _make_order(**overrides) -> Order:
+    """Build a complete Order instance with sensible defaults for testing."""
+    defaults = dict(
+        id=1,
+        ebay_order_id="order-123",
+        buyer_username="buyer1",
+        sale_price=Decimal("29.99"),
+        quantity=1,
+        shipping_cost=Decimal("0"),
+        ebay_fee=Decimal("0"),
+        status=OrderStatus.pending,
+        fulfillment_status=FulfillmentStatus.not_started,
+        listing_id=None,
+        amazon_purchase_url=None,
+        purchase_cost=None,
+        profit=None,
+        margin_percent=None,
+        amazon_order_id=None,
+        purchased_at=None,
+        tracking_number=None,
+        carrier=None,
+        payment_status=None,
+        shipping_address=None,
+        raw_payload=None,
+        last_webhook_at=None,
+        shipped_at=None,
+        delivered_at=None,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+    defaults.update(overrides)
+    return Order(**defaults)
 
 
 pytestmark = pytest.mark.usefixtures("override_auth")
@@ -31,16 +65,7 @@ async def test_get_order_not_found(client):
 
 @pytest.mark.asyncio
 async def test_get_order_success(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-123",
-        buyer_username="buyer1",
-        sale_price=Decimal("29.99"),
-        quantity=1,
-        status=OrderStatus.pending,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-123", buyer_username="buyer1", sale_price=Decimal("29.99"), status=OrderStatus.pending)
     with patch(
         "app.api.v1.endpoints.orders.order_service.get_order",
         new_callable=AsyncMock,
@@ -61,14 +86,7 @@ async def test_get_order_success(client):
 @pytest.mark.asyncio
 async def test_list_orders(client):
     orders = [
-        Order(
-            id=1,
-            ebay_order_id="o1",
-            sale_price=Decimal("10.00"),
-            status=OrderStatus.pending,
-            created_at=_NOW,
-            updated_at=_NOW,
-        ),
+        _make_order(id=1, ebay_order_id="o1", sale_price=Decimal("10.00"), status=OrderStatus.pending),
     ]
     with patch(
         "app.api.v1.endpoints.orders.order_service.list_orders",
@@ -88,16 +106,7 @@ async def test_list_orders(client):
 
 @pytest.mark.asyncio
 async def test_order_webhook_create(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-123",
-        buyer_username="buyer1",
-        sale_price=Decimal("29.99"),
-        quantity=1,
-        status=OrderStatus.pending,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-123", buyer_username="buyer1", sale_price=Decimal("29.99"), status=OrderStatus.pending)
     with patch(
         "app.api.v1.endpoints.orders.order_service.process_order_webhook",
         new_callable=AsyncMock,
@@ -125,15 +134,7 @@ async def test_order_webhook_create(client):
 
 @pytest.mark.asyncio
 async def test_update_order_status(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-1",
-        sale_price=Decimal("10.00"),
-        status=OrderStatus.shipped,
-        shipped_at=_NOW,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-1", sale_price=Decimal("10.00"), status=OrderStatus.shipped, shipped_at=_NOW)
     with patch(
         "app.api.v1.endpoints.orders.order_service.get_order",
         new_callable=AsyncMock,
@@ -173,16 +174,7 @@ async def test_update_order_status_not_found(client):
 
 @pytest.mark.asyncio
 async def test_update_order_fulfillment(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-1",
-        sale_price=Decimal("10.00"),
-        status=OrderStatus.shipped,
-        tracking_number="TRACK123",
-        carrier="UPS",
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-1", sale_price=Decimal("10.00"), status=OrderStatus.shipped, tracking_number="TRACK123", carrier="UPS")
     with patch(
         "app.api.v1.endpoints.orders.order_service.get_order",
         new_callable=AsyncMock,
@@ -205,14 +197,7 @@ async def test_update_order_fulfillment(client):
 
 @pytest.mark.asyncio
 async def test_update_order_fulfillment_status(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-1",
-        sale_price=Decimal("10.00"),
-        status=OrderStatus.pending,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-1", sale_price=Decimal("10.00"), status=OrderStatus.pending)
     with patch(
         "app.api.v1.endpoints.orders.order_service.get_order",
         new_callable=AsyncMock,
@@ -252,14 +237,7 @@ async def test_update_order_fulfillment_not_found(client):
 
 @pytest.mark.asyncio
 async def test_update_order(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-1",
-        sale_price=Decimal("100.00"),
-        status=OrderStatus.pending,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-1", sale_price=Decimal("100.00"), status=OrderStatus.pending)
     with patch(
         "app.api.v1.endpoints.orders.order_service.get_order",
         new_callable=AsyncMock,
@@ -304,14 +282,7 @@ async def test_update_order_not_found(client):
 
 @pytest.mark.asyncio
 async def test_purchase_link(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-1",
-        sale_price=Decimal("100.00"),
-        status=OrderStatus.pending,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-1", sale_price=Decimal("100.00"), status=OrderStatus.pending)
     with patch(
         "app.api.v1.endpoints.orders.order_service.get_order_with_product",
         new_callable=AsyncMock,
@@ -344,16 +315,7 @@ async def test_purchase_link_not_found(client):
 
 @pytest.mark.asyncio
 async def test_mark_purchased(client):
-    order = Order(
-        id=1,
-        ebay_order_id="order-1",
-        sale_price=Decimal("100.00"),
-        shipping_cost=Decimal("5.00"),
-        ebay_fee=Decimal("10.00"),
-        status=OrderStatus.pending,
-        created_at=_NOW,
-        updated_at=_NOW,
-    )
+    order = _make_order(id=1, ebay_order_id="order-1", sale_price=Decimal("100.00"), shipping_cost=Decimal("5.00"), ebay_fee=Decimal("10.00"), status=OrderStatus.pending)
     with patch(
         "app.api.v1.endpoints.orders.purchase_service.mark_order_purchased",
         new_callable=AsyncMock,

@@ -190,6 +190,7 @@ class OrderProfitDetailOut(BaseModel):
     purchase_cost: Optional[Decimal] = None
     profit: Optional[Decimal] = None
     margin_percent: Optional[Decimal] = None
+    created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

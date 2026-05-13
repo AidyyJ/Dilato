@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -13,6 +14,8 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.security import get_current_active_user
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,9 +28,10 @@ async def lifespan(app: FastAPI):
 
 def _global_exception_handler(request: Request, exc: Exception):
     """Return a consistent structured error envelope for unhandled exceptions."""
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc), "status_code": 500},
+        content={"detail": "Internal server error", "status_code": 500},
     )
 
 

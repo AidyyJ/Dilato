@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
-from app.core.security import get_current_active_user, get_password_hash
+from app.core.security import get_current_active_user, get_password_hash, create_access_token
 from app.models.models import User
 from app.core.database import get_db
 
@@ -107,6 +107,41 @@ async def test_login_wrong_password(client, mock_user):
     response = await client.post(
         "/api/v1/auth/login",
         data={"username": "testuser", "password": "wrongpassword"},
+    )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/auth/me
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_me_with_valid_token(client, mock_user):
+    token = create_access_token(data={"sub": mock_user.username})
+    response = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["username"] == mock_user.username
+    assert data["email"] == mock_user.email
+    assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_me_without_token(client):
+    app.dependency_overrides.pop(get_current_active_user, None)
+    response = await client.get("/api/v1/auth/me")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_with_invalid_token(client):
+    app.dependency_overrides.pop(get_current_active_user, None)
+    response = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": "Bearer invalidtoken"},
     )
     assert response.status_code == 401
 

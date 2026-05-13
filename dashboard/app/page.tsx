@@ -44,19 +44,12 @@ function aggregateProfitByDate(details: OrderProfitDetailOut[]): { date: string;
   const map = new Map<string, number>();
   details.forEach((d) => {
     const profit = d.profit != null ? Number(d.profit) : 0;
-    // We don't have order date in OrderProfitDetailOut, so we can't truly group by date.
-    // As a fallback, we'll distribute evenly across the range or use a simple aggregation.
-    // Since the API doesn't return dates for profit details, we'll show a simple line
-    // using the detail index as a proxy for chronological order.
-    // NOTE: This is a limitation of the current API.
+    const dateKey = d.created_at ? d.created_at.slice(0, 10) : "Unknown";
+    map.set(dateKey, (map.get(dateKey) ?? 0) + profit);
   });
-  // Alternative: return details sorted with index-based x-axis
-  return details
-    .filter((d) => d.profit != null)
-    .map((d, i) => ({
-      date: `Order ${i + 1}`,
-      profit: Number(d.profit),
-    }));
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, profit]) => ({ date, profit }));
 }
 
 function bucketMargins(details: OrderProfitDetailOut[]): { range: string; count: number }[] {

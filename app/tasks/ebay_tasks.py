@@ -47,10 +47,10 @@ async def _sync_ebay_listings() -> dict:
 
                     if listing.status == ListingStatus.active and not offer:
                         listing.status = ListingStatus.ended
-                        listing.ended_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        listing.ended_at = datetime.utcnow()
                     elif listing.status == ListingStatus.ended and offer:
                         listing.status = ListingStatus.active
-                        listing.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        listing.started_at = datetime.utcnow()
 
                     succeeded += 1
                 except Exception as exc:  # pragma: no cover
@@ -85,7 +85,7 @@ async def _sync_ebay_listings() -> dict:
             await api.close()
 
 
-@celery_app.task(bind=True, name="tasks.sync_ebay_listings", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def sync_ebay_listings(self):
     """Celery task to sync eBay listings status."""
     logger.info("Starting eBay listing sync")
@@ -173,7 +173,7 @@ async def _publish_ebay_listing(listing_id: int) -> dict:
             listing.status = ListingStatus.active
             listing.ebay_item_id = result.get("item_id")
             listing.ebay_sku = sku
-            listing.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            listing.started_at = datetime.utcnow()
             await session.commit()
 
             return {
@@ -185,7 +185,7 @@ async def _publish_ebay_listing(listing_id: int) -> dict:
             await api.close()
 
 
-@celery_app.task(bind=True, name="tasks.publish_ebay_listing", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def publish_ebay_listing(self, listing_id: int):
     """Celery task to publish a listing to eBay."""
     logger.info("Publishing eBay listing: listing_id=%s", listing_id)

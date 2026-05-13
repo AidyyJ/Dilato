@@ -1,7 +1,7 @@
 """add users table
 
 Revision ID: 004
-Revises: 003_add_sync_types
+Revises: 003
 Create Date: 2026-05-09
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "004"
-down_revision: Union[str, None] = "003_add_sync_types"
+down_revision: Union[str, None] = "003"
 branch_labels: Union[str, str, None] = None
 depends_on: Union[str, str, None] = None
 

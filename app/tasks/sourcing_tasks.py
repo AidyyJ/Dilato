@@ -26,7 +26,7 @@ async def _run_sourcing_scan(
         }
 
 
-@celery_app.task(bind=True, name="tasks.run_sourcing_scan", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def run_sourcing_scan(
     self,
     keywords: list = None,

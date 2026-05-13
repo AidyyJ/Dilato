@@ -1,7 +1,7 @@
 """add order webhook and fulfillment columns
 
 Revision ID: 005
-Revises: 004_add_users
+Revises: 004
 Create Date: 2026-05-09
 """
 from typing import Sequence, Union
@@ -10,12 +10,13 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "005"
-down_revision: Union[str, None] = "004_add_users"
+down_revision: Union[str, None] = "004"
 branch_labels: Union[str, str, None] = None
 depends_on: Union[str, str, None] = None
 
 
 def upgrade() -> None:
+    op.execute("CREATE TYPE fulfillmentstatus AS ENUM ('not_started', 'in_progress', 'delivered')")
     op.add_column("orders", sa.Column("shipping_address", sa.Text(), nullable=True))
     op.add_column("orders", sa.Column("payment_status", sa.String(length=50), nullable=True))
     op.add_column("orders", sa.Column("tracking_number", sa.String(length=100), nullable=True))
@@ -33,6 +34,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("orders", "fulfillment_status")
+    op.execute("DROP TYPE IF EXISTS fulfillmentstatus")
     op.drop_column("orders", "purchased_at")
     op.drop_column("orders", "amazon_order_id")
     op.drop_column("orders", "margin_percent")

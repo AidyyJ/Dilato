@@ -34,6 +34,7 @@ WORKDIR /app
 
 # Copy scripts and application code
 COPY --chown=appuser:appgroup scripts/ /scripts/
+RUN chmod +x /scripts/entrypoint.sh /scripts/run_migrations.sh
 COPY --chown=appuser:appgroup . .
 
 # Switch to non-root user

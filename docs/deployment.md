@@ -1,183 +1,412 @@
 # Deployment Guide
 
-This document describes how to build, configure, and deploy the Amazon-to-eBay Reseller platform in both local development and production environments.
+This guide explains how to run Dilato locally and deploy it to a VPS, with explicit steps for a Hostinger VPS.
 
----
+The project currently has two runtime planes:
 
-## Prerequisites
+- Backend plane in Docker: FastAPI API, Celery worker, Celery beat, PostgreSQL, Redis.
+- Dashboard plane outside Docker: Next.js app under `dashboard/`.
+
+## 1. What You Are Deploying
+
+Backend services (Docker):
+
+- `api` on port `8000`
+- `worker` (Celery)
+- `beat` (Celery Beat)
+- `db` (PostgreSQL 16)
+- `redis` (Redis 7)
+
+Frontend service (separate process):
+
+- Next.js dashboard (typically port `3000`), reverse-proxied by Nginx.
+
+## 2. Prerequisites
+
+Local machine:
 
 - Docker 24+
 - Docker Compose v2+
-- (Optional) Python 3.13+ for local test/lint execution
+- Node.js 20+ and npm (for dashboard)
 
----
+VPS (Hostinger recommended baseline):
 
-## Environment Variables
+- Ubuntu 22.04 or 24.04
+- 2 vCPU / 4 GB RAM minimum
+- Docker Engine + Compose plugin
+- Nginx
+- Node.js 20+
+- A domain name and DNS access
 
-Copy `.env.example` to `.env` and fill in all required values.
+## 3. Environment Variables
 
-### Required Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | Async PostgreSQL connection string (e.g., `postgresql+asyncpg://postgres:postgres@db:5432/reseller`) |
-| `DATABASE_URL_SYNC` | Sync PostgreSQL connection string for Alembic |
-| `SECRET_KEY` | Cryptographically secure random string for JWT signing |
-
-### Amazon PA-API Credentials
-
-| Variable | Description |
-|----------|-------------|
-| `AMAZON_ACCESS_KEY` | AWS access key for Product Advertising API |
-| `AMAZON_SECRET_KEY` | AWS secret key |
-| `AMAZON_PARTNER_TAG` | Amazon associate tag |
-
-### eBay REST API Credentials
-
-| Variable | Description |
-|----------|-------------|
-| `EBAY_CLIENT_ID` | eBay developer program client ID |
-| `EBAY_CLIENT_SECRET` | eBay developer program client secret |
-| `EBAY_DEV_ID` | eBay developer ID |
-| `EBAY_RU_NAME` | eBay RuName (OAuth redirect name) |
-
-### Optional Overrides
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDIS_URL` | built from components | Override full Redis connection string |
-| `CELERY_BROKER_URL` | built from components | Override Celery broker URL |
-| `CELERY_RESULT_BACKEND` | built from components | Override Celery result backend |
-| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000` | CORS origins (comma-separated) |
-
----
-
-## Local Development
-
-### 1. Build and Start
+Copy `.env.example` to `.env` and fill in values.
 
 ```bash
 cp .env.example .env
-# Edit .env with your credentials
-docker compose up --build
 ```
 
-Services started:
+Required app variables:
 
-| Service | Description | Exposed Port |
-|---------|-------------|--------------|
-| `api` | FastAPI application with auto-reload | `8000` |
-| `worker` | Celery worker | — |
-| `beat` | Celery Beat scheduler | — |
-| `db` | PostgreSQL 16 | `5432` |
-| `redis` | Redis 7 (broker + backend) | `6379` |
+- `DATABASE_URL`
+- `DATABASE_URL_SYNC`
+- `SECRET_KEY`
 
-### 2. Interactive API Docs
+Required in production compose (must be added manually because `.env.example` does not include them):
 
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_DB`
 
-### 3. Run Migrations Manually
+External API credentials (needed for real integrations):
+
+- `AMAZON_ACCESS_KEY`
+- `AMAZON_SECRET_KEY`
+- `AMAZON_PARTNER_TAG`
+- `EBAY_CLIENT_ID`
+- `EBAY_CLIENT_SECRET`
+- `EBAY_DEV_ID`
+- `EBAY_RU_NAME`
+
+Strongly recommended production values:
+
+- `REDIS_PASSWORD` (required by `docker-compose.prod.yml`)
+- `ALLOWED_ORIGINS` restricted to your frontend domain(s)
+
+Reference production-style values:
+
+```dotenv
+POSTGRES_USER=dilato
+POSTGRES_PASSWORD=<strong-db-password>
+POSTGRES_DB=dilato
+
+DATABASE_URL=postgresql+asyncpg://dilato:<strong-db-password>@db:5432/dilato
+DATABASE_URL_SYNC=postgresql://dilato:<strong-db-password>@db:5432/dilato
+
+SECRET_KEY=<openssl-rand-hex-32>
+REDIS_PASSWORD=<strong-redis-password>
+ALLOWED_ORIGINS=https://app.your-domain.tld
+```
+
+## 4. Local Setup (Full Stack Testing)
+
+### 4.1 Start backend stack
+
+From repository root:
+
+```bash
+cp .env.example .env
+# Edit .env
+docker compose up --build -d
+```
+
+Verify containers:
+
+```bash
+docker compose ps
+docker compose logs -f api
+curl http://localhost:8000/api/v1/health
+```
+
+Useful backend checks:
 
 ```bash
 docker compose exec api alembic upgrade head
-```
-
-### 4. Run Tests
-
-```bash
-# Inside the API container
 docker compose exec api pytest
-
-# Or locally with a virtual environment
-pytest
-```
-
-### 5. Inspect Workers
-
-```bash
 docker compose logs -f worker
 docker compose logs -f beat
 docker compose exec worker celery -A app.tasks.celery_app inspect ping
 ```
 
----
+### 4.2 Start dashboard locally
 
-## Production Deployment
-
-### 1. Build and Start
+In a separate shell:
 
 ```bash
+cd dashboard
+npm ci
+```
+
+Set API URL and run:
+
+Windows PowerShell:
+
+```powershell
+$env:NEXT_PUBLIC_API_URL = "http://localhost:8000"
+npm run dev
+```
+
+Linux/macOS:
+
+```bash
+export NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev
+```
+
+Open:
+
+- API docs: `http://localhost:8000/docs`
+- Dashboard: `http://localhost:3000`
+
+Important current limitation:
+
+- Most backend routes are JWT-protected, but the dashboard client does not yet implement login/token handling end-to-end.
+
+## 5. Hostinger VPS Deployment (Step-by-Step)
+
+This section assumes SSH access as `root` or a sudo user.
+
+### 5.1 Provision DNS
+
+Create records pointing to the VPS public IP:
+
+- `A` record: `api.your-domain.tld` -> VPS IP
+- `A` record: `app.your-domain.tld` -> VPS IP
+
+### 5.2 Base system hardening
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y ca-certificates curl gnupg lsb-release git ufw nginx
+```
+
+Firewall:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw --force enable
+sudo ufw status
+```
+
+### 5.3 Install Docker and Compose plugin
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+   $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
+   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+docker --version
+docker compose version
+```
+
+### 5.4 Install Node.js 20+
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v
+npm -v
+```
+
+### 5.5 Clone project and configure env
+
+```bash
+sudo mkdir -p /opt/dilato
+sudo chown -R $USER:$USER /opt/dilato
+git clone <your-repo-url> /opt/dilato
+cd /opt/dilato
 cp .env.example .env
-# Edit .env for production: strong SECRET_KEY, real API credentials, restricted origins
+```
+
+Edit `.env` and set at minimum:
+
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
+- `DATABASE_URL`, `DATABASE_URL_SYNC`
+- `SECRET_KEY`
+- `REDIS_PASSWORD`
+- `ALLOWED_ORIGINS=https://app.your-domain.tld`
+- Amazon/eBay credentials if you need live integration
+
+Generate a strong secret:
+
+```bash
+openssl rand -hex 32
+```
+
+### 5.6 Start backend production stack
+
+```bash
+cd /opt/dilato
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-### 2. Production Compose Features
-
-- Resource limits on all services
-- Restart policies (`unless-stopped`)
-- Healthchecks on the API container
-- Migrations run automatically on container start via `scripts/entrypoint.sh`
-
-### 3. Security Checklist
-
-- [ ] Generate a strong `SECRET_KEY` (e.g., `openssl rand -hex 32`).
-- [ ] Restrict `ALLOWED_ORIGINS` to your actual frontend domain(s).
-- [ ] Set `REDIS_PASSWORD` in production.
-- [ ] Use real Amazon and eBay API credentials (not test/sandbox if live trading).
-- [ ] Place a reverse proxy (Traefik, Nginx, or cloud load balancer) in front of the API for TLS termination.
-- [ ] Consider running database migrations in a one-off init container rather than on every app startup if scaling API to multiple replicas.
-- [ ] Enable PostgreSQL backups and point-in-time recovery.
-
-### 4. Scaling Workers
-
-Increase the number of Celery worker replicas:
+Verify:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --scale worker=4
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f api
+curl http://127.0.0.1:8000/api/v1/health
 ```
 
-Ensure your PostgreSQL connection pool and Redis instance can handle the increased concurrency.
+Notes:
 
-### 5. Health Monitoring
+- The API container runs migrations on startup via `scripts/run_migrations.sh`.
+- `scripts/entrypoint.sh` does not actively wait for Postgres; startup ordering is handled by Compose health checks and dependencies.
 
-The API container exposes a healthcheck endpoint:
+### 5.7 Deploy dashboard as a systemd service
+
+Build dashboard:
 
 ```bash
-curl -f http://localhost:8000/api/v1/health
+cd /opt/dilato/dashboard
+npm ci
+NEXT_PUBLIC_API_URL=https://api.your-domain.tld npm run build
 ```
 
-A `200 OK` response indicates the application is running and the database is reachable.
+Create service file `/etc/systemd/system/dilato-dashboard.service`:
 
----
+```ini
+[Unit]
+Description=Dilato Next.js Dashboard
+After=network.target
 
-## Docker Image Details
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/dilato/dashboard
+Environment=NODE_ENV=production
+Environment=NEXT_PUBLIC_API_URL=https://api.your-domain.tld
+ExecStart=/usr/bin/npm run start -- -p 3000
+Restart=always
+RestartSec=5
 
-### Multi-Stage Build
+[Install]
+WantedBy=multi-user.target
+```
 
-1. **Builder stage** (`python:3.13-slim` + `build-essential` + `libpq-dev`)
-   - Compiles Python dependencies into a virtual environment.
-2. **Runtime stage** (`python:3.13-slim` + `libpq5`)
-   - Copies the pre-built virtual environment.
-   - Runs as non-root `appuser`.
-   - Exposes port `8000`.
+Enable and start:
 
-### Entrypoint
+```bash
+sudo chown -R www-data:www-data /opt/dilato/dashboard
+sudo systemctl daemon-reload
+sudo systemctl enable --now dilato-dashboard
+sudo systemctl status dilato-dashboard --no-pager
+```
 
-`scripts/entrypoint.sh` performs:
-1. Waits for PostgreSQL to be reachable.
-2. Runs `alembic upgrade head`.
-3. Starts the application server (`uvicorn`).
+### 5.8 Configure Nginx reverse proxy
 
----
+Create `/etc/nginx/sites-available/dilato`:
 
-## Troubleshooting
+```nginx
+server {
+      listen 80;
+      server_name api.your-domain.tld;
+
+      location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+      }
+}
+
+server {
+      listen 80;
+      server_name app.your-domain.tld;
+
+      location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+      }
+}
+```
+
+Enable site:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/dilato /etc/nginx/sites-enabled/dilato
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 5.9 Enable TLS with Let's Encrypt
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d api.your-domain.tld -d app.your-domain.tld
+sudo certbot renew --dry-run
+```
+
+### 5.10 Post-deploy validation
+
+```bash
+curl -I https://api.your-domain.tld/api/v1/health
+curl -I https://app.your-domain.tld
+docker compose -f /opt/dilato/docker-compose.prod.yml ps
+sudo systemctl status dilato-dashboard --no-pager
+```
+
+## 6. Operations
+
+### 6.1 Update and redeploy
+
+Backend:
+
+```bash
+cd /opt/dilato
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Dashboard:
+
+```bash
+cd /opt/dilato/dashboard
+npm ci
+NEXT_PUBLIC_API_URL=https://api.your-domain.tld npm run build
+sudo systemctl restart dilato-dashboard
+```
+
+### 6.2 Logs
+
+```bash
+docker compose -f /opt/dilato/docker-compose.prod.yml logs -f api
+docker compose -f /opt/dilato/docker-compose.prod.yml logs -f worker
+docker compose -f /opt/dilato/docker-compose.prod.yml logs -f beat
+sudo journalctl -u dilato-dashboard -f
+```
+
+### 6.3 Backups
+
+Create periodic Postgres dumps:
+
+```bash
+mkdir -p /opt/backups/dilato
+docker exec $(docker ps --filter name=db --format '{{.ID}}' | head -n1) \
+   pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /opt/backups/dilato/dilato_$(date +%F).sql
+```
+
+Store backups off-server (object storage or remote backup host).
+
+## 7. Troubleshooting
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| API returns `500` on startup | Missing required env var | Check `SECRET_KEY`, `DATABASE_URL`, `DATABASE_URL_SYNC` |
-| Celery tasks not executing | Redis unreachable | Verify `REDIS_HOST` and `REDIS_PORT`; check `docker compose logs redis` |
-| eBay API returns `401` | Invalid/expired OAuth token | Verify `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` |
-| Amazon search returns empty | Invalid PA-API credentials or throttling | Check `AMAZON_ACCESS_KEY` / `AMAZON_SECRET_KEY`; verify rate limits |
-| Database migration fails | Sync URL incorrect | Ensure `DATABASE_URL_SYNC` uses `postgresql://` (not `postgresql+asyncpg://`) |
+| API container restarts repeatedly | Missing `.env` values | Check `SECRET_KEY`, DB URLs, and `REDIS_PASSWORD` in `.env` |
+| `db` fails in production compose | Missing `POSTGRES_*` variables | Add `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` to `.env` |
+| Dashboard shows API errors | `NEXT_PUBLIC_API_URL` incorrect | Rebuild dashboard with correct API URL and restart service |
+| 502 from Nginx | Upstream service not running | Check `docker compose ... ps` and `systemctl status dilato-dashboard` |
+| Celery tasks not processing | Worker disconnected from Redis | Verify Redis password and worker logs |
+| TLS issuance fails | DNS not propagated or port 80 blocked | Verify A records and firewall (`ufw status`) |
+
+## 8. Current Known Limitations
+
+- The dashboard is not fully integrated with backend JWT auth yet.
+- Dashboard deployment is separate from Docker compose.
+- Sourcing uses fallback estimate logic and is not a full market-aware eBay pricing engine.
+

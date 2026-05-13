@@ -39,11 +39,19 @@ export async function fetchApi<T>(
   const signal = options?.signal ?? undefined;
   let lastError: unknown;
 
+  // Attach auth token from localStorage
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const authHeaders: Record<string, string> = {};
+  if (token) {
+    authHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
   for (let attempt = 0; attempt <= DEFAULT_RETRIES; attempt++) {
     try {
       const res = await fetch(`${API_BASE}${path}`, {
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders,
           ...options?.headers,
         },
         ...options,
@@ -51,6 +59,15 @@ export async function fetchApi<T>(
       });
 
       if (!res.ok) {
+        // Handle 401 - clear token and redirect
+        if (res.status === 401) {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('auth_token');
+            window.location.href = '/login';
+          }
+          throw new Error('Not authenticated');
+        }
+
         let text: string;
         try {
           text = await res.text();
@@ -263,6 +280,7 @@ export interface OrderProfitDetailOut {
   purchase_cost?: string;
   profit?: string;
   margin_percent?: string;
+  created_at?: string;
 }
 
 export interface ProfitSummaryOut {

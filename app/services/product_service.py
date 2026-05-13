@@ -50,7 +50,7 @@ async def create_product(db: AsyncSession, product_in: ProductCreate) -> Product
         amazon_price=product_in.amazon_price,
         current_price=product_in.current_price,
         source=ProductSource.amazon,
-        last_synced_at=datetime.now(timezone.utc),
+        last_synced_at=datetime.utcnow(),
     )
     db.add(product)
     await db.commit()
@@ -77,7 +77,7 @@ async def upsert_product_from_amazon(
         existing.detail_page_url = detail_page_url
         existing.amazon_price = amazon_price
         existing.current_price = amazon_price
-        existing.last_synced_at = datetime.now(timezone.utc)
+        existing.last_synced_at = datetime.utcnow()
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -92,7 +92,7 @@ async def upsert_product_from_amazon(
         amazon_price=amazon_price,
         current_price=amazon_price,
         source=ProductSource.amazon,
-        last_synced_at=datetime.now(timezone.utc),
+        last_synced_at=datetime.utcnow(),
     )
     db.add(product)
     await db.commit()

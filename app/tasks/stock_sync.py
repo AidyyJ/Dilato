@@ -93,9 +93,7 @@ async def _sync_amazon_stock() -> dict:
                                     try:
                                         await ebay_api.end_listing(sku)
                                         listing.status = ListingStatus.ended
-                                        listing.ended_at = (
-                                            datetime.now(timezone.utc).replace(tzinfo=None)
-                                        )
+                                        listing.ended_at = datetime.utcnow()
                                     except Exception as exc:
                                         logger.error(
                                             "Failed to end eBay listing for %s: %s",
@@ -150,7 +148,7 @@ async def _sync_amazon_stock() -> dict:
             await amazon_api.close()
 
 
-@celery_app.task(bind=True, name="tasks.sync_amazon_stock", max_retries=3)
+@celery_app.task(bind=True, max_retries=3)
 def sync_amazon_stock(self):
     """Celery task to sync Amazon stock availability with eBay listings."""
     logger.info("Starting Amazon stock sync")

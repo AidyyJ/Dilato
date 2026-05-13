@@ -96,7 +96,7 @@ async def process_order_webhook(
     matching listing is found via SKU, the listing's ``quantity_sold`` is
     incremented.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     # Resolve status
     try:
@@ -348,7 +348,7 @@ async def record_purchase(
     for field, value in update_data.items():
         setattr(order, field, value)
 
-    order.purchased_at = datetime.now(timezone.utc)
+    order.purchased_at = datetime.utcnow()
 
     # Recalculate profit with the new purchase_cost
     order.profit, order.margin_percent = calculate_profit(
